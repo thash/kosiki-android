@@ -1,7 +1,10 @@
 (ns com.memerelics.kosiki.main
   (:use [neko.activity :only [defactivity set-content-view!]]
-        [neko.threading]
-        [neko.ui])
+        [neko.resource :as r] ;; r/get-string :keyword, etc
+        [neko.threading :only [on-ui]]
+        [neko.ui :only [make-ui]]
+        [neko.listeners.adapter-view :only [on-item-click]]
+        [neko.ui.adapters :only [ref-adapter]])
   (:require [cheshire.core :as json])
   (:import (org.apache.http HttpResponse)
            (org.apache.http.client HttpClient)
@@ -9,34 +12,48 @@
            (org.apache.http.impl.client DefaultHttpClient)
            (android.widget ArrayAdapter)))
 
+;; (in-ns 'com.memerelics.kosiki.main)
+
+;; Forwarding Android device's localhost to alm's localhost using Chrome Remote debug,
+;; then nginx proxy_pass it to DebianVM:3000 in which Rails running.
 (def domain "localhost:8080")
 (def api_key "de6zEHyY1sKLACgz-Tkg")
 
+;; using ref instead of atom is better?
+(def word-list-items (atom ["Loading..."]))
+
 (declare android.widget.LinearLayout main-layout)
 (def main [:linear-layout {:orientation :vertical,
-                                  :id-holder true, :def `main-layout}
-                  [:text-view {:text "wei from Clojure!"}]
-                  [:list-view {:id ::word-list}]])
+                           :id-holder true, :def `main-layout}
+           [:text-view {:id ::title :text "wei from Clojure!"}]
+           [:list-view {:id ::word-list}]])
+
+(defn get-element [id] (id (.getTag main-layout)))
 
 (defn get-json [url]
-  "repl> (first (get-json http://domain/words?api_key=.....))
-         { :id 1, :text \"Something is out of whack\", :ans \"何か調子が悪い\",
-           :pun \"\", :count 1, :done false,
-           :updated_at \"2013-12-24T00:58:19.000+09:00\",:created_at \"2011-01-10T20:24:23.000+09:00\" }"
   (let [client (DefaultHttpClient.)
         res (.. client (execute (HttpGet. url)))
         body (slurp (.. res getEntity getContent))]
     (json/decode body true)))
 
+;; TODO: handle multiple params
+(defn api-get [path] (get-json (str "http://" domain "/" path "?api_key=" api_key)))
+
+(defn update-word-list [words]
+  (on-ui
+   (.setText (get-element ::title) (:text (rand-nth words))) ;; make sure working
+   (reset! word-list-items (map #(:text %) words))))
+
 (defactivity com.memerelics.kosiki.MainActivity
   :def a
   :on-create
   (fn [this bundle]
-    (on-ui (set-content-view! a (make-ui main)))
-    (future (let [data (get-json (str "http://" domain "/words?api_key=" api_key))]
-              (on-ui
-               ;; (.setText (::words (.getTag main-layout)) (:text (first data)))
-               (.. (::word-list (.getTag main-layout))
-                   (setAdapter (ArrayAdapter. a android.R$layout/simple_list_item_1 (map #(:text %) data))))
-               )))
+    (on-ui
+     (set-content-view! a (make-ui main))
+     ;; NOTE: cause error when use ref-adapter at toplevel.
+     (.. (get-element ::word-list)
+         (setAdapter (ref-adapter (fn [] [:text-view {:text "-- created --"}]) ;; not shown
+                                  (fn [position view _ data] (.setText view (str position ": " data)))
+                                  word-list-items))))
+    (future (update-word-list (api-get "words")))
     ))
