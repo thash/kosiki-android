@@ -13,9 +13,9 @@
 
   :dependencies [[org.clojure-android/clojure "1.5.1-jb" :use-resources true]
                  [cheshire "5.3.0"]
-                 [neko/neko "3.0.0-preview3"]]
+                 [neko/neko "3.0.1-local-SNAPSHOT"]] ;; use my build
   :profiles {:dev {:dependencies [[android/tools.nrepl "0.2.0-bigstack"]
-                                  [compliment "0.0.2"]]
+                                  [compliment "0.0.3"]]
                    :android {:aot :all-with-unused}}
              :release {:android
                        {;; Specify the path to your private keystore
