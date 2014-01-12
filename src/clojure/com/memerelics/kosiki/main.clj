@@ -1,11 +1,13 @@
 (ns com.memerelics.kosiki.main
-  (:use [neko.activity :only [defactivity set-content-view!]]
+  (:use [com.memerelics.kosiki.layout :as l]
+        [neko.activity :only [defactivity set-content-view!]]
         [neko.resource :as r] ;; r/get-string :keyword, etc
         [neko.threading :only [on-ui]]
         [neko.ui :only [make-ui]]
         [neko.listeners.adapter-view :only [on-item-click]]
         [neko.ui.adapters :only [ref-adapter]])
-  (:require [cheshire.core :as json])
+  (:require [cheshire.core :as json]
+            [clojure.string :as s])
   (:import (org.apache.http HttpResponse)
            (org.apache.http.client HttpClient)
            (org.apache.http.client.methods HttpGet)
@@ -20,15 +22,9 @@
 (def api_key "de6zEHyY1sKLACgz-Tkg")
 
 ;; using ref instead of atom is better?
-(def word-list-items (atom ["Loading..."]))
+(def word-list-items (atom []))
 
-(declare android.widget.LinearLayout main-layout)
-(def main [:linear-layout {:orientation :vertical,
-                           :id-holder true, :def `main-layout}
-           [:text-view {:id ::title :text "wei from Clojure!"}]
-           [:list-view {:id ::word-list}]])
-
-(defn get-element [id] (id (.getTag main-layout)))
+(defn get-element [base id] (id (.getTag base)))
 
 (defn get-json [url]
   (let [client (DefaultHttpClient.)
@@ -40,20 +36,23 @@
 (defn api-get [path] (get-json (str "http://" domain "/" path "?api_key=" api_key)))
 
 (defn update-word-list [words]
-  (on-ui
-   (.setText (get-element ::title) (:text (rand-nth words))) ;; make sure working
-   (reset! word-list-items (map #(:text %) words))))
+  (on-ui (reset! word-list-items words)))
 
 (defactivity com.memerelics.kosiki.MainActivity
   :def a
   :on-create
   (fn [this bundle]
     (on-ui
-     (set-content-view! a (make-ui main))
+     (set-content-view! a (make-ui l/main)) ;; NOTE: change a -> this for release build
      ;; NOTE: cause error when use ref-adapter at toplevel.
-     (.. (get-element ::word-list)
-         (setAdapter (ref-adapter (fn [] [:text-view {:text "-- created --"}]) ;; not shown
-                                  (fn [position view _ data] (.setText view (str position ": " data)))
-                                  word-list-items))))
-    (future (update-word-list (api-get "words")))
-    ))
+     (.setAdapter
+      (get-element l/main-layout ::l/word-list)
+      (ref-adapter
+       (fn [] l/word-row)
+       (fn [position view _ word] ;; called when word-list-items is updated
+         (.setText (get-element (get-element view ::l/problem-block) ::l/word-text) (:text word))
+         (.setText (get-element (get-element view ::l/problem-block) ::l/word-created-at)
+                   (s/replace (:created_at word) #"^(\d+)-(\d+)-(\d+).*" "$1/$2/$3"))
+         (.setText (get-element (get-element view ::l/answer-block) ::l/word-ans)  (:ans word)))
+       word-list-items)))
+    (future (update-word-list (api-get "words")))))
